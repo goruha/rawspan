@@ -1,0 +1,253 @@
+<?php
+/**
+ * Implements hook_menu().
+ */
+function collapse_table_menu() {
+  $items = array();
+  $items['collapse_form'] = array(
+    'title' => t('Сведения о банках'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('collapse_table_my_form'),
+    'access arguments' => array('access content'),
+    'description' => t('My form'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+function collapse_table_my_form($form, $form_state, $bank_id, $program_ids) {
+  // entity_load('taxonomy_term', array($bank_id));
+  $bank = taxonomy_term_load($bank_id);
+  $form['collapse'] = array(
+    '#type' => 'fieldset',
+    '#title' => t($bank->name),
+    '#collapsible' => TRUE,
+  );
+  $programs = entity_load('taxonomy_term', $program_ids);
+  foreach ($programs as $program) {
+    $form['collapse']['programs'][] = array(
+      'content' => taxonomy_term_view($program, 'collapse_table'),
+      'checkbox' => array(
+        '#type' => 'checkbox',
+        '#name' => "programs[$program->tid]",
+      ),
+    );
+  }
+
+  $form['collapse']['anket'] = array('#type' => 'hidden');
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Отправить',
+  );
+  // entity_view('taxonomy_term', array($term), 'collap_view');
+  return $form;
+}
+
+/**
+ * Implements of hook_views_api().
+ */
+function collapse_table_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'collapse_table'),
+  );
+}
+
+/**
+ * Implements hook_entity_info_alter().
+ *
+ * Although the module only provides an UI for comparing nodes, it has an
+ * extendable API for any entity, so we supply two view modes for all entities.
+ * - collapse_table: This view mode is used to tell the module how to compare
+ *                  individual fields. This is used on the revisions page.
+ */
+function collapse_table_entity_info_alter(&$entity_info) {
+  $entity_info['taxonomy_term']['view modes']['collapse_table'] = array(
+    'label' => t('Collapse table form'),
+    'custom settings' => TRUE,
+  );
+  $entity_info['node']['view modes']['list'] = array(
+    'label' => t('List'),
+    'custom settings' => TRUE,
+  );
+}
+
+/*formatter*/
+
+/**
+ * Implements of hook_field_info().
+ */
+function collapse_table_field_info() {
+  return array(
+    'field_views' => array(
+      'label' => t('View 1'),
+      'description' => t('This field allows for an embeded view'),
+      'settings' => array('global_setting' => 255),
+      'instance_settings' => array('local' => 0),
+      'default_widget' => 'field_views',
+      'default_formatter' => 'collapse_table_formatter',
+      'no_ui' => FALSE,
+    ),
+  );
+}
+/**
+ * Implements hook_field_formatter_info().
+ */
+function collapse_table_field_formatter_info() {
+  return array(
+    'collapse_table_formatter' => array(
+      'label' => 'Display View Collapse',
+      'field types' => array('field_views'),
+      'settings' => array('view' => '', 'args' => ''),
+    ),
+  );
+}
+/**
+ * Implements hook_field_formatter_prepare_view().
+ */
+function collapse_table_field_formatter_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items, $displays) {
+  foreach ($items as $key => $value) {
+    if (!$value) {
+      $items[$key] = array("");
+    }
+  }
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ *
+ * For the fommater we are setting the context saved in the field
+ * and returning an empty array
+ */
+function collapse_table_field_formatter_view($entity_type, &$entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+  $settings = $display['settings'];
+  $settings_arg = explode(" ", $settings['view']);;
+  $settings_arg = array_merge($settings_arg, explode(",", $settings['args']));
+  foreach ($settings_arg as &$item) {
+    $item = token_replace($item, array('node' => $entity));
+  }
+  $element[0]['#markup'] = call_user_func_array('views_embed_view', $settings_arg);
+  return $element;
+}
+
+
+/**
+ * Implements of hook_field_formatter_settings_from().
+ *
+ * We find all views and displays and make a select field with them
+ */
+function collapse_table_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+
+  $options = array();
+  $views = views_get_all_views();
+  foreach ($views as $name => $view) {
+    foreach ($view->display as $display_name => $display) {
+      $options[$view->human_name]["$name $display_name"] = "{$view->human_name} -- " . $display->display_title . " ($display_name)";
+    }
+  }
+  $form['view'] = array(
+    '#type' => 'select',
+    '#title' => 'View',
+    '#options' => $options,
+  );
+  $form['args'] = array(
+    '#type' => 'textfield',
+    '#title' => t('View arguments'),
+    '#default_value' => $settings['args'],
+    '#required' => FALSE,
+    '#size' => 43,
+  );
+  if (module_exists('token')) {
+    // Get the token type for the entity type our field is
+    // in (a type 'taxonomy_term' has a 'term' type token).
+    $instance_entity_info = entity_get_info($instance['entity_type']);
+    $token_type = isset($instance_entity_info['token type']) ? $instance_entity_info['token type'] : $instance['entity_type'];
+
+    $form['tokens'] = array(
+      '#theme' => 'token_tree',
+      // The token types that have specific context. Can be multiple
+      // token types like 'term' and/or 'user'.
+      '#token_types' => array($token_type),
+      // A boolean TRUE or FALSE whether to include 'global' context
+      // tokens like [current-user:*] or [site:*]. Defaults to TRUE.
+      '#global_types' => TRUE,
+      // A boolean whether to include the 'Click this token to insert
+      // in into the the focused textfield'
+      // JavaScript functionality. Defaults to TRUE.
+      '#click_insert' => TRUE,
+    );
+  }
+  return $form;
+}
+
+/**
+ * Implements of hook_field_formatter_settings_summary().
+ *
+ * we display the name of the view and display that has been selected
+ * the button of setting is placed in this function
+ */
+function collapse_table_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+  $settings_arg = $settings['args'];
+  list($view_name, $display_name) = explode(" ", $settings['view']);
+  $view = views_get_view($view_name);
+  $display = $view->display[$display_name];
+  return "View: {$view->human_name} <BR />Display: " . $display->display_title . " ($display_name)" . "<BR />Args: " . $settings_arg;
+}
+
+/**
+ * Implements hook_token_info().
+ */
+function collapse_table_token_info() {
+  $get_value['birthday'] = array(
+    'name' => t("Birthday"),
+    'description' => t("Get value of the person birthday."),
+  );
+  $get_value['credit_type'] = array(
+    'name' => t("Credit type"),
+    'description' => t("Get type of credit."),
+  );
+  return array(
+    'tokens' => array('node' => $get_value),
+  );
+}
+/**
+ * Implements hook_tokens().
+ */
+function collapse_table_tokens($type, $tokens, array $data = array(), array $options = array()) {
+  $replacements = array();
+  if ($type == 'node') {
+    foreach ($tokens as $name => $original) {
+      switch ($name) {
+        case 'birthday':
+          if (isset($data['node']->field_anket['und'][0]['target_id'])) {
+            $person = node_load($data['node']->field_anket['und'][0]['target_id']);
+            $dob = $person->field_person_birthday['und'][0]['value'];
+            $dob = explode('-', $dob);
+            $time = getdate();
+            $year = $time['year'];
+            $replacements[$original] = $year - $dob[0];
+          }
+          break;
+        case 'credit_type':
+          if (isset($data['node']->type)) {
+            if ("autocredit" == $data['node']->type) {
+              $replacements[$original] = 0;
+            }
+            if ("hypothecation" == $data['node']->type) {
+              $replacements[$original] = 1;
+            }
+            if ("consumer_credit" == $data['node']->type) {
+              $replacements[$original] = 2;
+            }
+          }
+          break;
+      }
+    }
+  }
+  return $replacements;
+}

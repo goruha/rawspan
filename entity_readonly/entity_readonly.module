@@ -1,0 +1,25 @@
+<?php
+
+/**
+ * Implements hook_field_widget_info().
+ */
+function entitype_field_widget_info() {
+  return array(
+    'field_collection_hidden' => array(
+      'label' => t('Hidden'),
+      'field types' => array('field_collection'),
+      'behaviors' => array(
+        'multiple values' => FIELD_BEHAVIOR_CUSTOM,
+        'default value' => FIELD_BEHAVIOR_NONE,
+      ),
+    ),
+    'field_collection_embed' => array(
+      'label' => t('Embedded'),
+      'field types' => array('field_collection'),
+      'behaviors' => array(
+        'multiple values' => FIELD_BEHAVIOR_DEFAULT,
+        'default value' => FIELD_BEHAVIOR_NONE,
+      ),
+    ),
+  );
+}
